@@ -14,6 +14,7 @@
 |---|---|---|
 | `req-writer` | sonnet | Оформить принятые решения в эпик, стори, SR, NFR по шаблонам: ID по реестру, `parent`/`children`/`links`. Пакет стори — параллельно, ID выдаёт основной поток |
 | `req-reviewer` | opus | Проверка требований и кейсов перед показом и перед `review`/`approved`: трассировка, инварианты, противоречия, глоссарий. Только чтение |
+| `test-case-author` | sonnet | Кейсы в `docs/tests/cases/` из approved SR и NFR и критериев приёмки стори: ID по реестру тестов, `verifies`, без дублей. Пакет требований — параллельно, ID выдаёт основной поток |
 | `playwright-runner` | sonnet | Прогон Playwright-тестов по кейсам `docs/tests` (приёмка, регресс, проверка бага), заведение раннера и автотестов по кейсам. Сырой отчёт — в `tmp/agents/playwright/`, прогон в `docs/tests/runs/` — только по просьбе |
 
 Новый агент — файл `.claude/agents/<имя>.md` с заголовком `name`, `description`, `model` (и при необходимости `tools`, `effort`, `maxTurns`); `name` совпадает с именем файла. Префикс ID в тексте агента не прописывать: брать его из `docs/requirements/_registry.md` и `docs/tests/_registry.md`.
