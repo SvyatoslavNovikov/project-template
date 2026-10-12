@@ -5,7 +5,7 @@
 ## Карта
 - [context.md](context.md) — карта инструкций и правила работы над продуктом: прочитать перед работой с требованиями и тестами.
 - `docs/requirements/`, `docs/tests/` — требования и тесты по шаблонам из `_templates/`.
-- [.claude/toolkit.md](.claude/toolkit.md) — скиллы, агенты, хуки и их настройка. `docs/handoff/` — передача работы между сессиями (скилл `handoff`).
+- [.claude/toolkit.md](.claude/toolkit.md) — скиллы, агенты, хуки и их настройка. `docs/handoff/` — передача работы между сессиями (скилл `handoff`). `docs/meetings/` — конспекты встреч (скилл `meeting-notes`).
 - `tmp/agents/` — сырые результаты исполнителей, в git не попадают.
 
 ## Личные правила: CLAUDE.local.md

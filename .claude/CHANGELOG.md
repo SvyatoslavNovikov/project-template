@@ -13,3 +13,4 @@
 - `req_lint.py` переименован в `docs_lint.py`: он проверяет и требования, и тесты. Новые проверки: `level` у SR и кейса, `mode` у прогона, кейс без `verifies` (ошибка с `approved`/`automated`), `verifies` на obsolete-требование, пустые «Шаги» и «Ожидаемый результат» с `review`, obsolete-кейс в сьюите.
 - `.gitattributes`: LF в рабочей копии на любой ОС (`* text=auto eol=lf`), CRLF только для `.bat`/`.cmd`.
 - Агент `test-case-author`: кейсы из approved SR и NFR, `verifies`, проверка `docs_lint`.
+- Скиллы `bug-report`, `regression-report`, `meeting-notes` под структуру `docs/requirements` и `docs/tests`; конспекты встреч — `docs/meetings/`. `docs_lint` проверяет `severity` бага.
