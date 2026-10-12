@@ -12,6 +12,8 @@
 
 | Агент | Модель | Когда |
 |---|---|---|
+| `req-writer` | sonnet | Оформить принятые решения в эпик, стори, SR, NFR по шаблонам: ID по реестру, `parent`/`children`/`links`. Пакет стори — параллельно, ID выдаёт основной поток |
+| `req-reviewer` | opus | Проверка требований и кейсов перед показом и перед `review`/`approved`: трассировка, инварианты, противоречия, глоссарий. Только чтение |
 | `playwright-runner` | sonnet | Прогон Playwright-тестов по кейсам `docs/tests` (приёмка, регресс, проверка бага), заведение раннера и автотестов по кейсам. Сырой отчёт — в `tmp/agents/playwright/`, прогон в `docs/tests/runs/` — только по просьбе |
 
 Новый агент — файл `.claude/agents/<имя>.md` с заголовком `name`, `description`, `model` (и при необходимости `tools`, `effort`, `maxTurns`); `name` совпадает с именем файла. Префикс ID в тексте агента не прописывать: брать его из `docs/requirements/_registry.md` и `docs/tests/_registry.md`.
@@ -24,6 +26,7 @@
 | `secret_guard.py` | PreToolUse (Bash, PowerShell) | Запрещает литералы токенов в команде и `git add` каталогов сырых выгрузок |
 | `external_write_guard.py` | PreToolUse (Bash, PowerShell) | Спрашивает подтверждение на запись во внешние системы; чтение и `--dry-run` пропускает |
 | `frontmatter_lint.py` | PostToolUse (Write, Edit) | Проверяет заголовок агентов и скиллов: с ошибкой в YAML приложение молча их не регистрирует |
+| `req_lint.py` | PostToolUse (Write, Edit) | Механика `docs/requirements` и `docs/tests`: имена и ID, дерево и `children`, связи, справочники, прогоны, инварианты, реестры. Показывает замечания по изменённому файлу и реестру его пространства |
 
 `command_parse.py` — общий разбор команд для хуков: отличает запуск скрипта от упоминания в `git add`, `grep` или тексте коммита. `hook_config.py` читает настройки.
 
@@ -56,6 +59,12 @@ python -m unittest discover -s .claude/hooks/tests -v
 ```bash
 python .claude/hooks/frontmatter_lint.py
 ```
+
+```bash
+python .claude/hooks/req_lint.py docs
+```
+
+`req_lint.py` без аргументов проверяет всё, с путями — показывает замечания только по ним; код выхода 1 при ошибках, предупреждения (`warn`) его не меняют. Нужен PyYAML (`pip install pyyaml`): без него хук молчит, CLI завершается с кодом 2. Смысл требований линтер не проверяет: это `req-reviewer`.
 
 Тесты хуков работают на временном репозитории со своим конфигом и не зависят от `config.json` проекта. После правки хуков прогнать их.
 

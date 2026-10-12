@@ -8,3 +8,5 @@
 - Хуки `secret_guard`, `external_write_guard` с настройкой через `.claude/hooks/config.json`; `frontmatter_lint`, `command_parse`; тесты в `.claude/hooks/tests/`.
 - Скилл `handoff`.
 - Агент `playwright-runner`: прогон по кейсам `docs/tests`, ID кейса `PRJ-T-<n>` — идентификатор автотеста; сырой отчёт в `tmp/agents/playwright/`, прогон в `docs/tests/runs/` — по просьбе. В `.gitignore` — каталоги отчётов Playwright.
+- Агенты `req-writer` (оформление требований по шаблонам и реестру) и `req-reviewer` (проверка трассировки, инвариантов и противоречий, только чтение).
+- `req_lint.py`: механика `docs/requirements` и `docs/tests` (CLI и хук PostToolUse), тесты `.claude/hooks/tests/test_req_lint.py`. `req-writer` и `req-reviewer` запускают его вместо ручной проверки механики.
