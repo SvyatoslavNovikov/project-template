@@ -13,6 +13,7 @@ docs/requirements/README.md, docs/requirements/TRACEABILITY.md и docs/tests/REA
   - прогоны: состав `results`, `revision`, `outcome`, файлы `results/<кейс>.md`; поля бага `found_*`;
   - инварианты: у approved стори есть SR, у obsolete есть входящий supersedes,
     нет циклов в `depends-on`, пара conflicts-with не оба approved;
+  - `external`: словарь «система → ID», один внешний ID — один артефакт;
   - реестры: `Next` больше любого выданного номера.
 Смысл (формулировки, противоречия, покрытие) проверяет агент `req-reviewer`.
 
@@ -193,6 +194,7 @@ class Linter:
         self.req_registry = ROOT / "docs" / "requirements" / "_registry.md"
         self.test_registry = ROOT / "docs" / "tests" / "_registry.md"
         self.prefix = registry(self.req_registry)[0]
+        self.external_owners: dict[tuple[str, str], Artifact] = {}
 
     def add(self, path: Path, line: int, level: str, message: str) -> None:
         self.issues.append(Issue(path, line, level, message))
@@ -294,6 +296,24 @@ class Linter:
             elif c.fm.get("parent") != a.id:
                 self.add(a.path, a.line(str(child)), "error",
                          f"в children {child}, но его parent — «{c.fm.get('parent') or ''}»")
+
+    def check_external(self, a: Artifact) -> None:
+        external = a.fm.get("external")
+        if external in (None, {}):
+            return
+        if not isinstance(external, dict):
+            self.add(a.path, a.line("external:"), "error", "external — словарь «система: ID»")
+            return
+        for system, key in external.items():
+            line = a.line(f"{system}:")
+            if not re.fullmatch(r"[a-z][a-z0-9-]*", str(system)):
+                self.add(a.path, line, "error", f"external: имя системы «{system}» — латиница в нижнем регистре")
+            if key in (None, "") or isinstance(key, (dict, list)):
+                self.add(a.path, line, "error", f"external.{system}: нужен ID строкой")
+                continue
+            owner = self.external_owners.setdefault((str(system), str(key)), a)
+            if owner is not a:
+                self.add(a.path, line, "error", f"external.{system} = {key} уже у {owner.id}")
 
     def check_catalogs(self, a: Artifact) -> None:
         for key in ("releases", "affects_releases", "release"):
@@ -487,6 +507,7 @@ class Linter:
             self.check_identity(a)
             self.check_tree(a)
             self.check_catalogs(a)
+            self.check_external(a)
             self.check_links(a)
             if a.type == "bug":
                 self.check_bug(a)

@@ -225,6 +225,16 @@ class BrokenRepoTest(DocsLintCase):
         files[TS] = {**files[TS], "links": files[TS]["links"] + [{"type": "contains", "to": "ACME-T-4"}]}
         self.assertFinds(files, "сьюит содержит obsolete-кейс ACME-T-4", registries=((5, 6), (5, 6)))
 
+    def test_external(self):
+        code, out = self.lint(self.build(self.mutate(US, external={"jira": "ACME-JIRA-7"})))
+        self.assertEqual((code, out.strip()), (0, "замечаний нет"))
+        files = self.mutate(US, external={"jira": "J-1"})
+        files[SR] = {**files[SR], "external": {"jira": "J-1"}}
+        self.assertFinds(files, "external.jira = J-1 уже у ACME-2")
+        self.assertFinds(self.mutate(US, external="J-1"), "external — словарь")
+        self.assertFinds(self.mutate(US, external={"Jira": "J-1"}), "имя системы «Jira»")
+        self.assertFinds(self.mutate(US, external={"jira": ""}), "external.jira: нужен ID строкой")
+
     def test_registry(self):
         self.assertFinds(valid_repo(), "Next = 5, а уже выдан номер 5", registries=((4, 5), (3, 4)))
         code, out = self.assertFinds(valid_repo(), "Last issued = 4", registries=((4, 6), (3, 4)))

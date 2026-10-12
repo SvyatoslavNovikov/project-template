@@ -39,6 +39,8 @@ docs/tests/
 
 Имя файла: `PRJ-T-<n>-<тип>-<slug>.md`. Номера без ведущих нулей. `PRJ-10` и `PRJ-T-10` сосуществуют.
 
+Ключи кейсов, сьюитов и прогонов во внешней TMS — необязательное поле `external` (правила — в [`../requirements/README.md`](../requirements/README.md#внешние-системы-поле-external)).
+
 ## Как выдать номер
 
 1. Открыть [`_registry.md`](_registry.md).
