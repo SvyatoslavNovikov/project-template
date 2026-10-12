@@ -14,3 +14,4 @@
 - `.gitattributes`: LF в рабочей копии на любой ОС (`* text=auto eol=lf`), CRLF только для `.bat`/`.cmd`.
 - Агент `test-case-author`: кейсы из approved SR и NFR, `verifies`, проверка `docs_lint`.
 - Скиллы `bug-report`, `regression-report`, `meeting-notes` под структуру `docs/requirements` и `docs/tests`; конспекты встреч — `docs/meetings/`. `docs_lint` проверяет `severity` бага.
+- `optional/`: дополнительные модули, подключаются копированием. Первый — `optional/figma/` (агент `figma-reader`, рецепт `figma-reading.md`). `frontmatter_lint` проверяет агентов и скиллы модулей.
