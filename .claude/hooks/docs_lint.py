@@ -7,7 +7,7 @@ docs/requirements/README.md, docs/requirements/TRACEABILITY.md и docs/tests/REA
   - место в дереве и `parent` по папкам, допустимый тип родителя, взаимность `children`;
   - `links`: цель существует, допустимые пары типов, каноническая сторона, self-link;
   - ключи справочников (`releases`, `affects_releases`, `release`, `environment`);
-  - `level` у SR и кейса, `mode` у прогона;
+  - `level` у SR и кейса, `mode` у прогона, `severity` у бага;
   - кейсы: `verifies` (сирота не даёт покрытия), verifies на obsolete-требование, заполненные
     «Шаги» и «Ожидаемый результат» с review; сьюит без obsolete-кейсов;
   - прогоны: состав `results`, `revision`, `outcome`, файлы `results/<кейс>.md`; поля бага `found_*`;
@@ -50,6 +50,7 @@ PRIORITY = {"must", "should", "could"}
 CASE_LEVELS = ("unit", "api", "ui", "e2e")
 SR_LEVELS = ("functional", "data", "api", "ui", "integration")
 RUN_MODES = ("manual", "automated")
+SEVERITY = ("blocker", "major", "minor", "trivial")
 COVERING = ("approved", "automated")  # статусы кейса, которые дают покрытие
 CASE_SECTIONS = ("Шаги", "Ожидаемый результат")
 PLACEHOLDER = re.compile(r"^(?:[-*]|\d+\.)?\s*(?:…|\.\.\.)?\s*$")
@@ -340,6 +341,8 @@ class Linter:
                 self.add(a.path, line, "error", f"conflicts-with: {a.id} и {to} оба approved")
 
     def check_bug(self, a: Artifact) -> None:
+        if a.fm.get("severity") not in SEVERITY:
+            self.add(a.path, a.line("severity:"), "error", f"severity «{a.fm.get('severity') or ''}»: {' | '.join(SEVERITY)}")
         for key, kind in (("found_in", "test-run"), ("found_on", "test-case")):
             value = a.fm.get(key)
             if value and (str(value) not in self.by_id or self.by_id[str(value)].type != kind):

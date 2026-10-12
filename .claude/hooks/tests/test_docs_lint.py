@@ -51,7 +51,7 @@ def valid_repo() -> dict[str, str]:
                  priority="must", level="functional", links=[{"type": "implemented-in", "to": "code:src/auth"}]),
         NFR: dict(id="ACME-4", type="nfr", status="draft", parent="ACME-1", children=[], priority="should",
                   links=[{"type": "constrains", "to": "ACME-3"}]),
-        BUG: dict(id="ACME-5", type="bug", status="open", parent="", children=[], environment="stage",
+        BUG: dict(id="ACME-5", type="bug", status="open", severity="major", parent="", children=[], environment="stage",
                   affects_releases=["1.0"], found_in="ACME-T-3", found_on="ACME-T-1",
                   links=[{"type": "defects", "to": "ACME-3"}]),
         TC: dict(id="ACME-T-1", type="test-case", status="approved", priority="must", level="ui",
@@ -137,7 +137,7 @@ class BrokenRepoTest(DocsLintCase):
 
     def test_duplicate_id(self):
         files = valid_repo()
-        files["bugs/ACME-3-bug-dup.md"] = dict(id="ACME-3", type="bug", status="open", parent="", children=[], links=[])
+        files["bugs/ACME-3-bug-dup.md"] = dict(id="ACME-3", type="bug", status="open", severity="minor", parent="", children=[], links=[])
         self.assertFinds(files, "ID ACME-3 уже занят")
 
     def test_tree(self):
@@ -191,6 +191,7 @@ class BrokenRepoTest(DocsLintCase):
         self.assertFinds(self.mutate(TC, level="manual"), "level «manual»: unit | api | ui | e2e")
         self.assertFinds(self.mutate(SR, level=""), "level «»: functional")
         self.assertFinds(self.mutate(TR, mode="auto"), "mode «auto»: manual | automated")
+        self.assertFinds(self.mutate(BUG, severity="critical"), "severity «critical»: blocker")
 
     def test_case_coverage(self):
         code, _ = self.assertFinds(self.mutate(TC, links=[]), "error: нет verifies")
