@@ -40,6 +40,12 @@
             "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/frontmatter_lint.py\" --hook",
             "timeout": 10,
             "statusMessage": "Проверка заголовка агента или скилла..."
+          },
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/req_lint.py\" --hook",
+            "timeout": 15,
+            "statusMessage": "Проверка механики требований и тестов..."
           }
         ]
       }
