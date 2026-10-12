@@ -1,0 +1,19 @@
+# Переносы строк: LF в репозитории и в рабочей копии на любой ОС,
+# независимо от core.autocrlf на машине (правило CLAUDE.md «файлы сохранять с LF»).
+* text=auto eol=lf
+
+# Скрипты cmd.exe работают только с CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Двоичные файлы не трогать.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.woff binary
+*.woff2 binary
