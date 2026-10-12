@@ -31,5 +31,6 @@
 - [`docs/tests/`](docs/tests/README.md) — кейсы, сьюиты, прогоны
 - [`docs/requirements/TRACEABILITY.md`](docs/requirements/TRACEABILITY.md) — типы связей и покрытие
 - [`docs/requirements/GLOSSARY.md`](docs/requirements/GLOSSARY.md) — термины и роли
+- [`CLAUDE.md`](CLAUDE.md) и [`.claude/`](.claude/toolkit.md) — правила Claude Code: оркестрация агентов, защитные хуки, handoff. Внешние системы проекта (трекер, вики, TMS) описать в `.claude/hooks/config.json`.
 
 Живые тикеты в шаблон не входят: папки `epics/`, `bugs/`, `cases/`, `suites/`, `runs/` пустые.

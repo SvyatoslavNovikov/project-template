@@ -1,0 +1,13 @@
+# Claude Code: личные правила и настройки машины
+CLAUDE.local.md
+.claude/settings.local.json
+
+# Сырые результаты агентов
+/tmp/agents/
+
+__pycache__/
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
