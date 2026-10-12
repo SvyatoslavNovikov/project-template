@@ -1,0 +1,6 @@
+{
+  "secret_env": ["JIRA_TOKEN"],
+  "write_hosts": ["<хост Jira, например jira\\.example\\.com>"],
+  "client_files": ["scripts/lib/jira_client.py"],
+  "apply_scripts": ["scripts/jira_cli.py"]
+}

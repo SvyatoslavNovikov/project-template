@@ -7,6 +7,10 @@
 | Модуль | Что даёт |
 |---|---|
 | [`figma/`](figma/README.md) | Агент `figma-reader` и рецепт чтения макетов Figma через Claude in Chrome |
+| [`common/`](common/README.md) | Общая часть интеграций: HTTP-клиент с dry-run по умолчанию, чтение артефактов и запись `external`. Подключается первым |
+| [`jira/`](jira/README.md) | CLI и скилл `jira`: чтение задач, выгрузка эпиков, стори и багов с ключом в `external.jira` |
+| [`confluence/`](confluence/README.md) | CLI и скилл `confluence`: страницы как текст, публикация артефактов и конспектов с ID в `external.confluence` |
+| [`testit/`](testit/README.md) | CLI и скилл `testit`: кейсы в work items, результаты прогонов через автотесты с `externalId` = ID кейса |
 
 ## Как устроен модуль
 
@@ -16,7 +20,10 @@ optional/<модуль>/
 ├── agents/            ← копируется в .claude/agents/
 ├── skills/            ← копируется в .claude/skills/
 ├── docs/              ← копируется в docs/
+├── scripts/           ← CLI, конфиг, lib/ и tests/ — в scripts/ проекта
 └── config.json        ← что дописать в .claude/hooks/config.json (если модуль пишет во внешнюю систему)
 ```
+
+Модули интеграции пишут во внешние системы только с `--apply`; без флага печатают план. Ключ созданного объекта сохраняется в поле `external` артефакта (правила — `docs/requirements/README.md`). Тесты модулей работают без сети: в шаблоне — `python -m unittest discover -s optional/<модуль>/scripts/tests`, в проекте — `-s scripts/tests`.
 
 Заголовки агентов и скиллов модулей проверяет `python .claude/hooks/frontmatter_lint.py` и в шаблоне, до копирования.

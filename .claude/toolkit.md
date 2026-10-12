@@ -79,6 +79,8 @@ python .claude/hooks/docs_lint.py docs
 | Модуль | Что даёт |
 |---|---|
 | `figma` | Агент `figma-reader` и рецепт `docs/figma-reading.md`: макеты Figma по node-id через Claude in Chrome |
+| `common` | Основа интеграций: `http_client.py` (dry-run по умолчанию), `artifacts.py` (артефакты и `external`) |
+| `jira`, `confluence`, `testit` | CLI с `--apply`, скилл и фрагмент `config.json` для хуков; ключи внешних объектов — в `external` |
 
 ## Обновления шаблона
 

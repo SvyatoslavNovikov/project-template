@@ -15,3 +15,6 @@
 - Агент `test-case-author`: кейсы из approved SR и NFR, `verifies`, проверка `docs_lint`.
 - Скиллы `bug-report`, `regression-report`, `meeting-notes` под структуру `docs/requirements` и `docs/tests`; конспекты встреч — `docs/meetings/`. `docs_lint` проверяет `severity` бага.
 - `optional/`: дополнительные модули, подключаются копированием. Первый — `optional/figma/` (агент `figma-reader`, рецепт `figma-reading.md`). `frontmatter_lint` проверяет агентов и скиллы модулей.
+- Поле `external` (ключи во внешних системах) в правилах `docs/` и в `docs_lint`: словарь «система → ID», один внешний ID — один артефакт.
+- Модули `optional/common`, `jira`, `confluence`, `testit`: клиенты REST, CLI с dry-run по умолчанию и `--apply`, скиллы, фрагменты `config.json`, тесты без сети.
+- `hook_config`: ошибка в `.claude/hooks/config.json` больше не выключает защиту молча — `external_write_guard` спрашивает подтверждение на любую команду и называет причину.

@@ -1,0 +1,13 @@
+{
+  "base_url": "",
+  "auth": "bearer",
+  "project": "",
+  "issue_types": {
+    "epic": "Epic",
+    "user-story": "Story",
+    "bug": "Bug"
+  },
+  "epic_name_field": "",
+  "epic_link_field": "",
+  "labels": []
+}

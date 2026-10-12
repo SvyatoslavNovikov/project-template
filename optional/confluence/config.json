@@ -1,0 +1,6 @@
+{
+  "secret_env": ["CONF_TOKEN"],
+  "write_hosts": ["<хост Confluence, например wiki\\.example\\.com>"],
+  "client_files": ["scripts/lib/confluence_client.py"],
+  "apply_scripts": ["scripts/confluence_cli.py"]
+}
