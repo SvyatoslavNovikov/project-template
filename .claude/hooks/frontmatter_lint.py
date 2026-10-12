@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-TARGET = re.compile(r"(^|/)\.(claude|cursor)/(agents/[^/]+\.md|skills/[^/]+/SKILL\.md)$")
+TARGET = re.compile(r"(^|/)(\.claude|\.cursor|optional/[^/]+)/(agents/[^/]+\.md|skills/[^/]+/SKILL\.md)$")
 KEY = re.compile(r"^([A-Za-z][\w-]*):(?:\s+(.*))?$")
 
 try:
@@ -124,9 +124,9 @@ def hook() -> int:
 
 def all_targets() -> list[Path]:
     found = []
-    for base in (".claude", ".cursor"):
-        found += sorted((ROOT / base).glob("agents/*.md"))
-        found += sorted((ROOT / base).glob("skills/*/SKILL.md"))
+    for base in [ROOT / ".claude", ROOT / ".cursor", *sorted((ROOT / "optional").glob("*/"))]:
+        found += sorted(base.glob("agents/*.md"))
+        found += sorted(base.glob("skills/*/SKILL.md"))
     return found
 
 

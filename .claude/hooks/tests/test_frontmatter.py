@@ -62,6 +62,9 @@ class LintTextTest(unittest.TestCase):
     def test_name_must_match_file(self):
         self.assertTrue(fl.lint_text(doc("Читает макеты.", name="figma"), AGENT))
         skill = Path(".claude/skills/handoff/SKILL.md")
+        self.assertTrue(fl.is_target(Path("optional/figma/agents/figma-reader.md")))
+        self.assertTrue(fl.is_target(Path("optional/jira/skills/jira-lookup/SKILL.md")))
+        self.assertFalse(fl.is_target(Path("optional/figma/docs/figma-reading.md")))
         self.assertEqual(fl.lint_text(doc("Передача работы.", name="handoff"), skill), [])
 
 
