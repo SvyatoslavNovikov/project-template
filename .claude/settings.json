@@ -43,7 +43,7 @@
           },
           {
             "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/req_lint.py\" --hook",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/docs_lint.py\" --hook",
             "timeout": 15,
             "statusMessage": "Проверка механики требований и тестов..."
           }

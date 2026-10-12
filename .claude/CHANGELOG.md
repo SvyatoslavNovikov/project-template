@@ -10,3 +10,4 @@
 - Агент `playwright-runner`: прогон по кейсам `docs/tests`, ID кейса `PRJ-T-<n>` — идентификатор автотеста; сырой отчёт в `tmp/agents/playwright/`, прогон в `docs/tests/runs/` — по просьбе. В `.gitignore` — каталоги отчётов Playwright.
 - Агенты `req-writer` (оформление требований по шаблонам и реестру) и `req-reviewer` (проверка трассировки, инвариантов и противоречий, только чтение).
 - `req_lint.py`: механика `docs/requirements` и `docs/tests` (CLI и хук PostToolUse), тесты `.claude/hooks/tests/test_req_lint.py`. `req-writer` и `req-reviewer` запускают его вместо ручной проверки механики.
+- `req_lint.py` переименован в `docs_lint.py`: он проверяет и требования, и тесты. Новые проверки: `level` у SR и кейса, `mode` у прогона, кейс без `verifies` (ошибка с `approved`/`automated`), `verifies` на obsolete-требование, пустые «Шаги» и «Ожидаемый результат» с `review`, obsolete-кейс в сьюите.

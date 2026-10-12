@@ -7,14 +7,17 @@ docs/requirements/README.md, docs/requirements/TRACEABILITY.md и docs/tests/REA
   - место в дереве и `parent` по папкам, допустимый тип родителя, взаимность `children`;
   - `links`: цель существует, допустимые пары типов, каноническая сторона, self-link;
   - ключи справочников (`releases`, `affects_releases`, `release`, `environment`);
+  - `level` у SR и кейса, `mode` у прогона;
+  - кейсы: `verifies` (сирота не даёт покрытия), verifies на obsolete-требование, заполненные
+    «Шаги» и «Ожидаемый результат» с review; сьюит без obsolete-кейсов;
   - прогоны: состав `results`, `revision`, `outcome`, файлы `results/<кейс>.md`; поля бага `found_*`;
   - инварианты: у approved стори есть SR, у obsolete есть входящий supersedes,
     нет циклов в `depends-on`, пара conflicts-with не оба approved;
   - реестры: `Next` больше любого выданного номера.
 Смысл (формулировки, противоречия, покрытие) проверяет агент `req-reviewer`.
 
-  python .claude/hooks/req_lint.py [пути]   проверить всё или только замечания по путям
-  python .claude/hooks/req_lint.py --hook   режим хука PostToolUse(Write|Edit): JSON из stdin
+  python .claude/hooks/docs_lint.py [пути]   проверить всё или только замечания по путям
+  python .claude/hooks/docs_lint.py --hook   режим хука PostToolUse(Write|Edit): JSON из stdin
 
 Нужен PyYAML (`pip install pyyaml`). Без него CLI завершается с кодом 2, хук молчит.
 """
@@ -44,6 +47,12 @@ STATUSES = {
 }
 RESULT_STATUS = {"passed", "failed", "blocked", "skipped", "not-run"}
 PRIORITY = {"must", "should", "could"}
+CASE_LEVELS = ("unit", "api", "ui", "e2e")
+SR_LEVELS = ("functional", "data", "api", "ui", "integration")
+RUN_MODES = ("manual", "automated")
+COVERING = ("approved", "automated")  # статусы кейса, которые дают покрытие
+CASE_SECTIONS = ("Шаги", "Ожидаемый результат")
+PLACEHOLDER = re.compile(r"^(?:[-*]|\d+\.)?\s*(?:…|\.\.\.)?\s*$")
 PARENT_TYPES = {"user-story": {"epic"}, "system-requirement": {"user-story"}, "nfr": {"user-story", "epic"}}
 SPEC = {"system-requirement", "nfr"}
 # тип связи -> (допустимые типы источника, допустимые типы цели); None — любой
@@ -336,8 +345,55 @@ class Linter:
             if value and (str(value) not in self.by_id or self.by_id[str(value)].type != kind):
                 self.add(a.path, a.line(f"{key}:"), "error", f"{key}: {value} должен быть существующим {kind}")
 
+    def section_filled(self, a: Artifact, title: str) -> bool | None:
+        """Есть ли в секции «## title» что-то кроме заглушек шаблона; None — секции нет."""
+        found, body = False, []
+        for line in a.text.splitlines():
+            if line.startswith("## "):
+                if found:
+                    break
+                found = line[3:].strip() == title
+                continue
+            if found:
+                body.append(line.strip())
+        if not found:
+            return None
+        return any(not PLACEHOLDER.match(line) for line in body)
+
+    def check_case(self, a: Artifact) -> None:
+        status = a.fm.get("status")
+        if a.fm.get("level") not in CASE_LEVELS:
+            self.add(a.path, a.line("level:"), "error", f"level «{a.fm.get('level') or ''}»: {' | '.join(CASE_LEVELS)}")
+        verifies = [str(l.get("to")) for l in as_list(a.fm.get("links"))
+                    if isinstance(l, dict) and l.get("type") == "verifies"]
+        if not verifies and status != "obsolete":
+            self.add(a.path, a.line("links:"), "error" if status in COVERING else "warn",
+                     "нет verifies: кейс-сирота, в покрытие не идёт")
+        for to in verifies:
+            t = self.by_id.get(to)
+            if t and t.fm.get("status") == "obsolete" and status != "obsolete":
+                self.add(a.path, a.line(f"to: {to}"), "warn", f"verifies → {to}, а требование obsolete")
+        if status in ("review",) + COVERING:
+            for title in CASE_SECTIONS:
+                filled = self.section_filled(a, title)
+                if not filled:
+                    self.add(a.path, a.line(f"## {title}"), "error" if status in COVERING else "warn",
+                             f"секция «{title}» {'отсутствует' if filled is None else 'пустая'}, а кейс {status}")
+
+    def check_suite(self, a: Artifact) -> None:
+        if a.fm.get("status") == "obsolete":
+            return
+        for link in as_list(a.fm.get("links")):
+            if isinstance(link, dict) and link.get("type") == "contains":
+                t = self.by_id.get(str(link.get("to")))
+                if t and t.fm.get("status") == "obsolete":
+                    self.add(a.path, a.line(f"to: {link.get('to')}"), "warn",
+                             f"сьюит содержит obsolete-кейс {link.get('to')}")
+
     def check_run(self, a: Artifact) -> None:
         status = a.fm.get("status")
+        if a.fm.get("mode") not in RUN_MODES:
+            self.add(a.path, a.line("mode:"), "error", f"mode «{a.fm.get('mode') or ''}»: {' | '.join(RUN_MODES)}")
         seen, statuses = set(), []
         for row in as_list(a.fm.get("results")):
             if not isinstance(row, dict):
@@ -433,6 +489,12 @@ class Linter:
                 self.check_bug(a)
             if a.type == "test-run":
                 self.check_run(a)
+            if a.type == "test-case":
+                self.check_case(a)
+            if a.type == "test-suite":
+                self.check_suite(a)
+            if a.type == "system-requirement" and a.fm.get("level") not in SR_LEVELS:
+                self.add(a.path, a.line("level:"), "error", f"level «{a.fm.get('level') or ''}»: {' | '.join(SR_LEVELS)}")
         self.check_invariants()
         self.check_registries()
         return sorted(self.issues, key=lambda i: (rel(i.path), i.line))
@@ -461,7 +523,7 @@ def hook() -> int:
     issues = [i for i in Linter().run()
               if i.path.resolve() == path or (i.path.resolve() == space_root / "_registry.md")]
     if issues:
-        text = (f"req_lint: {rel(path)}\n" + "\n".join("  " + i.render() for i in issues[:20])
+        text = (f"docs_lint: {rel(path)}\n" + "\n".join("  " + i.render() for i in issues[:20])
                 + (f"\n  … ещё {len(issues) - 20}" if len(issues) > 20 else ""))
         print(json.dumps({
             "systemMessage": text,
@@ -475,7 +537,7 @@ def main(argv: list[str]) -> int:
         return hook()
     sys.stdout.reconfigure(encoding="utf-8")
     if yaml is None:
-        print("req_lint: нужен PyYAML — pip install pyyaml", file=sys.stderr)
+        print("docs_lint: нужен PyYAML — pip install pyyaml", file=sys.stderr)
         return 2
     issues = Linter().run()
     if argv:

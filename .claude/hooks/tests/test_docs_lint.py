@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""req_lint: механика требований и тестов на временном репозитории.
+"""docs_lint: механика требований и тестов на временном репозитории.
 
 Запуск из корня репозитория:  python -m unittest discover -s .claude/hooks/tests -v
 """
@@ -13,7 +13,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-HOOK = Path(__file__).resolve().parents[1] / "req_lint.py"
+HOOK = Path(__file__).resolve().parents[1] / "docs_lint.py"
 
 REGISTRY = "Сквозной счётчик `{p}-<n>`\n\n| Поле | Значение |\n|---|---|\n| Last issued | {last} |\n| Next | {next} |\n"
 CATALOG = "| key | name | status |\n|---|---|---|\n{rows}\n\n`status`: x\n"
@@ -28,11 +28,16 @@ TS = "suites/ACME-T-2-ts-smoke.md"
 TR = "runs/ACME-T-3-tr-smoke/ACME-T-3-tr-smoke.md"
 
 
-def doc(stem: str, **fm) -> str:
+def doc(stem: str, _body: str = "", **fm) -> str:
+    """Frontmatter из fm, затем H1 и тело (_body)."""
     lines = ["---"]
     for key, value in fm.items():
         lines.append(f"{key}: {json.dumps(value, ensure_ascii=False)}")
-    return "\n".join(lines + ["---", "", f"# {stem}", ""])
+    return "\n".join(lines + ["---", "", f"# {stem}", "", _body])
+
+
+CASE_BODY = "## Цель\n\nВход.\n\n## Шаги\n\n1. Открыть форму.\n\n## Ожидаемый результат\n\n- Форма открыта.\n"
+TEMPLATE_BODY = "## Шаги\n\n1. …\n2. …\n\n## Ожидаемый результат\n\n- …\n"
 
 
 def valid_repo() -> dict[str, str]:
@@ -43,14 +48,14 @@ def valid_repo() -> dict[str, str]:
         US: dict(id="ACME-2", type="user-story", status="approved", parent="ACME-1", children=["ACME-3"],
                  priority="must", releases=["1.0"], links=[]),
         SR: dict(id="ACME-3", type="system-requirement", status="approved", parent="ACME-2", children=[],
-                 priority="must", links=[{"type": "implemented-in", "to": "code:src/auth"}]),
+                 priority="must", level="functional", links=[{"type": "implemented-in", "to": "code:src/auth"}]),
         NFR: dict(id="ACME-4", type="nfr", status="draft", parent="ACME-1", children=[], priority="should",
                   links=[{"type": "constrains", "to": "ACME-3"}]),
         BUG: dict(id="ACME-5", type="bug", status="open", parent="", children=[], environment="stage",
                   affects_releases=["1.0"], found_in="ACME-T-3", found_on="ACME-T-1",
                   links=[{"type": "defects", "to": "ACME-3"}]),
-        TC: dict(id="ACME-T-1", type="test-case", status="approved", priority="must",
-                 links=[{"type": "verifies", "to": "ACME-3"}]),
+        TC: dict(id="ACME-T-1", type="test-case", status="approved", priority="must", level="ui",
+                 links=[{"type": "verifies", "to": "ACME-3"}], _body=CASE_BODY),
         TS: dict(id="ACME-T-2", type="test-suite", status="approved", priority="should",
                  links=[{"type": "contains", "to": "ACME-T-1"}, {"type": "relates-to", "to": "ACME-1"}]),
         TR: dict(id="ACME-T-3", type="test-run", status="completed", outcome="failed", mode="automated",
@@ -60,12 +65,12 @@ def valid_repo() -> dict[str, str]:
     }
 
 
-class ReqLintCase(unittest.TestCase):
+class DocsLintCase(unittest.TestCase):
     def build(self, files: dict, registries=((5, 6), (3, 4)), extra: dict[str, str] | None = None) -> Path:
         tmp = Path(self.tmpdir.name) / f"repo{len(list(Path(self.tmpdir.name).iterdir()))}"
         hooks = tmp / ".claude" / "hooks"
         hooks.mkdir(parents=True)
-        shutil.copy(HOOK, hooks / "req_lint.py")
+        shutil.copy(HOOK, hooks / "docs_lint.py")
         req, tests = tmp / "docs" / "requirements", tmp / "docs" / "tests"
         (req / "_catalogs").mkdir(parents=True)
         tests.mkdir(parents=True)
@@ -90,7 +95,7 @@ class ReqLintCase(unittest.TestCase):
         self.tmpdir.cleanup()
 
     def lint(self, root: Path, *args: str) -> tuple[int, str]:
-        proc = subprocess.run([sys.executable, str(root / ".claude" / "hooks" / "req_lint.py"), *args],
+        proc = subprocess.run([sys.executable, str(root / ".claude" / "hooks" / "docs_lint.py"), *args],
                               capture_output=True, text=True, encoding="utf-8", cwd=root)
         return proc.returncode, proc.stdout
 
@@ -100,7 +105,7 @@ class ReqLintCase(unittest.TestCase):
         return code, out
 
 
-class ValidRepoTest(ReqLintCase):
+class ValidRepoTest(DocsLintCase):
     def test_valid_repo_passes(self):
         code, out = self.lint(self.build(valid_repo()))
         self.assertEqual((code, out.strip()), (0, "замечаний нет"))
@@ -110,7 +115,7 @@ class ValidRepoTest(ReqLintCase):
         self.assertEqual(code, 0, out)
 
 
-class BrokenRepoTest(ReqLintCase):
+class BrokenRepoTest(DocsLintCase):
     def mutate(self, path: str, **changes) -> dict:
         files = valid_repo()
         files[path] = {**files[path], **changes}
@@ -182,6 +187,43 @@ class BrokenRepoTest(ReqLintCase):
             "docs/tests/runs/ACME-T-3-tr-smoke/results/ACME-T-9.md": "---\ncase: ACME-T-9\n---\n"}))
         self.assertIn("такого кейса нет в results", out)
 
+    def test_levels_and_modes(self):
+        self.assertFinds(self.mutate(TC, level="manual"), "level «manual»: unit | api | ui | e2e")
+        self.assertFinds(self.mutate(SR, level=""), "level «»: functional")
+        self.assertFinds(self.mutate(TR, mode="auto"), "mode «auto»: manual | automated")
+
+    def test_case_coverage(self):
+        code, _ = self.assertFinds(self.mutate(TC, links=[]), "error: нет verifies")
+        self.assertEqual(code, 1)  # approved-кейс без verifies обещает покрытие, которого нет
+        code, _ = self.assertFinds(self.mutate(TC, status="draft", links=[]), "warn: нет verifies")
+        self.assertEqual(code, 0)
+        files = self.mutate(NFR, status="obsolete")
+        files["epics/ACME-1-epic-core/requirements/ACME-6-nfr-speed2.md"] = dict(
+            id="ACME-6", type="nfr", status="draft", parent="ACME-1", children=[],
+            links=[{"type": "supersedes", "to": "ACME-4"}, {"type": "constrains", "to": "ACME-3"}])
+        files[EPIC]["children"] = ["ACME-2", "ACME-4", "ACME-6"]
+        files[TC] = {**files[TC], "links": [{"type": "verifies", "to": "ACME-3"}, {"type": "verifies", "to": "ACME-4"}]}
+        self.assertFinds(files, "verifies → ACME-4, а требование obsolete", registries=((6, 7), (3, 4)))
+
+    def test_case_sections(self):
+        code, out = self.assertFinds(self.mutate(TC, _body=TEMPLATE_BODY), "секция «Шаги» пустая, а кейс approved")
+        self.assertIn("секция «Ожидаемый результат» пустая", out)
+        self.assertEqual(code, 1)
+        self.assertFinds(self.mutate(TC, _body="## Цель\n\nВход.\n"), "секция «Шаги» отсутствует")
+        code, _ = self.assertFinds(self.mutate(TC, status="review", _body=TEMPLATE_BODY), "warn: секция «Шаги» пустая")
+        self.assertEqual(code, 0)
+        code, out = self.lint(self.build(self.mutate(TC, status="draft", _body=TEMPLATE_BODY)))
+        self.assertEqual((code, out.strip()), (0, "замечаний нет"))
+
+    def test_suite_with_obsolete_case(self):
+        files = valid_repo()
+        files["cases/ACME-T-4-tc-old.md"] = dict(id="ACME-T-4", type="test-case", status="obsolete", level="ui", links=[])
+        files["cases/ACME-T-5-tc-new.md"] = dict(id="ACME-T-5", type="test-case", status="draft", level="ui",
+                                                 links=[{"type": "supersedes", "to": "ACME-T-4"},
+                                                        {"type": "verifies", "to": "ACME-3"}])
+        files[TS] = {**files[TS], "links": files[TS]["links"] + [{"type": "contains", "to": "ACME-T-4"}]}
+        self.assertFinds(files, "сьюит содержит obsolete-кейс ACME-T-4", registries=((5, 6), (5, 6)))
+
     def test_registry(self):
         self.assertFinds(valid_repo(), "Next = 5, а уже выдан номер 5", registries=((4, 5), (3, 4)))
         code, out = self.assertFinds(valid_repo(), "Last issued = 4", registries=((4, 6), (3, 4)))
@@ -193,10 +235,10 @@ class BrokenRepoTest(ReqLintCase):
         self.assertEqual(self.lint(root, "docs/tests")[1].strip(), "замечаний нет")
 
 
-class HookTest(ReqLintCase):
+class HookTest(DocsLintCase):
     def run_hook(self, root: Path, file_path: Path) -> str:
         payload = json.dumps({"tool_input": {"file_path": str(file_path)}})
-        return subprocess.run([sys.executable, str(root / ".claude" / "hooks" / "req_lint.py"), "--hook"],
+        return subprocess.run([sys.executable, str(root / ".claude" / "hooks" / "docs_lint.py"), "--hook"],
                               input=payload, capture_output=True, text=True, encoding="utf-8").stdout.strip()
 
     def test_reports_only_changed_file(self):
