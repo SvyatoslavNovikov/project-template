@@ -51,7 +51,8 @@ def make_repo(tmp: Path, config: dict | None) -> Path:
     hooks = tmp / ".claude" / "hooks"
     shutil.copytree(HOOKS, hooks, ignore=shutil.ignore_patterns("tests", "__pycache__", "config.json"))
     if config is not None:
-        (hooks / "config.json").write_text(json.dumps(config), encoding="utf-8")
+        text = config if isinstance(config, str) else json.dumps(config)
+        (hooks / "config.json").write_text(text, encoding="utf-8")
     for rel, text in {"scripts/lib/svc_client.py": CLIENT, **SCRIPTS}.items():
         path = tmp / rel
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -159,6 +160,21 @@ class EmptyConfigTest(HookCase):
         self.hook = "secret_guard.py"
         self.assertDecisions("allow", ("git add svc-export/X-1.json", "echo " + FAKE_NAMED))
         self.assertDecisions("deny", ("echo " + FAKE_GENERIC,))
+
+
+class BrokenConfigTest(HookCase):
+    """Опечатка в config.json не должна молча выключать защиту."""
+
+    config = '{"write_hosts": ["api\\.example\\.com"]}'  # \. — недопустимая escape-последовательность JSON
+
+    def test_write_guard_asks_on_everything(self):
+        self.hook = "external_write_guard.py"
+        self.assertDecisions("ask", ("python scripts/report.py", "git status"))
+
+    def test_secret_guard_keeps_generic_checks(self):
+        self.hook = "secret_guard.py"
+        self.assertDecisions("deny", ("echo " + FAKE_GENERIC,))
+        self.assertDecisions("allow", ("git status",))
 
 
 if __name__ == "__main__":

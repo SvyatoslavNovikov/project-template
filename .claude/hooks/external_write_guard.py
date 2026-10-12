@@ -127,7 +127,10 @@ def main() -> int:
     command = (payload.get("tool_input") or {}).get("command", "")
     if not command:
         return 0
-    rules = Rules(hook_config.load())
+    try:
+        rules = Rules(hook_config.load())
+    except hook_config.ConfigError as exc:
+        ask(str(exc) + ".")  # без настроек не знаем, что пишет наружу: спрашиваем на всё
     if not (rules.hosts or rules.apply_scripts or rules.client_stems):
         return 0
     cwd = payload.get("cwd") or str(ROOT)

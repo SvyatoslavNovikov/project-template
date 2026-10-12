@@ -13,6 +13,7 @@
   apply_scripts  скрипты (пути от корня), которые пишут только с флагом --apply.
 
 Нет файла или пустые списки — хук проверяет только общее (литералы токенов в заголовках).
+Файл есть, но не разбирается — ConfigError: хуки не должны молча работать без настроек.
 """
 from __future__ import annotations
 
@@ -23,9 +24,20 @@ ROOT = Path(__file__).resolve().parents[2]
 KEYS = ("secret_env", "export_dirs", "write_hosts", "client_files", "apply_scripts")
 
 
+class ConfigError(RuntimeError):
+    pass
+
+
 def load() -> dict[str, list[str]]:
+    path = ROOT / ".claude" / "hooks" / "config.json"
     try:
-        data = json.loads((ROOT / ".claude" / "hooks" / "config.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        data = {}
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        text = "{}"
+    try:
+        data = json.loads(text)
+        if not isinstance(data, dict) or not all(isinstance(data.get(k) or [], list) for k in KEYS):
+            raise ValueError("ожидается объект со списками " + ", ".join(KEYS))
+    except ValueError as exc:
+        raise ConfigError(f".claude/hooks/config.json не разбирается ({exc}): защита записи и токенов не работает, исправьте файл") from exc
     return {key: [str(v) for v in data.get(key) or []] for key in KEYS}
