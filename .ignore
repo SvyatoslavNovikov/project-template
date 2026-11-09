@@ -1,0 +1,2 @@
+# ripgrep (Grep в Claude Code): не искать в отменённых требованиях. git этот файл не читает.
+docs/requirements/_canceled/

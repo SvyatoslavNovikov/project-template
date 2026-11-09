@@ -6,6 +6,7 @@ status: draft
 parent: PRJ-N
 children: []
 owner: ""
+decided_by: system  # user | system: кто утверждает NFR
 priority: should
 tags: []
 releases: []

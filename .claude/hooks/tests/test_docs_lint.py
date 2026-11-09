@@ -177,6 +177,216 @@ class BrokenRepoTest(DocsLintCase):
         files[SR] = {**files[SR], "links": [{"type": "conflicts-with", "to": "ACME-4"}]}
         self.assertFinds(files, "оба approved")
 
+    def test_canceled(self):
+        canceled = "_canceled/ACME-6-sr-old.md"
+
+        def with_canceled(**changes) -> dict:
+            files = valid_repo()
+            files[canceled] = {**dict(id="ACME-6", type="system-requirement", status="canceled", parent="ACME-2",
+                                      children=[], level="functional", cancel_reason="Отказались на встрече 01.11", links=[]), **changes}
+            return files
+
+        code, out = self.lint(self.build(with_canceled(), registries=((6, 7), (3, 4))))
+        self.assertEqual((code, out.strip()), (0, "замечаний нет"))
+        regs = dict(registries=((6, 7), (3, 4)))
+        self.assertFinds(with_canceled(cancel_reason=""), "canceled без cancel_reason", **regs)
+        self.assertFinds(with_canceled(status="draft"), "в _canceled/ только canceled", **regs)
+        self.assertFinds(with_canceled(children=["ACME-3"]), "у canceled children должен быть пустым", **regs)
+        files = with_canceled()
+        files[US] = {**files[US], "children": ["ACME-3", "ACME-6"]}
+        self.assertFinds(files, "в children ACME-6, а он canceled", **regs)
+        files = with_canceled()
+        files[NFR] = {**files[NFR], "links": [{"type": "constrains", "to": "ACME-6"}]}
+        self.assertFinds(files, "живые артефакты на отменённые не ссылаются", **regs)
+        self.assertFinds(self.mutate(NFR, status="canceled", cancel_reason="x"), "canceled лежит не в docs/requirements/_canceled/")
+
+    def test_status_sets(self):
+        self.assertFinds(self.mutate(SR, status="acceptance"), "status «acceptance» не из списка")
+        self.assertFinds(self.mutate(NFR, status="acceptance"), "status «acceptance» не из списка")
+        _, out = self.lint(self.build(self.mutate(US, status="acceptance")))
+        self.assertNotIn("не из списка", out)
+        for status in ("in-progress", "superseded"):
+            _, out = self.lint(self.build(self.mutate(SR, status=status)))
+            self.assertNotIn("не из списка", out)
+
+    def replaced_nfr(self, **changes) -> dict:
+        """NFR ACME-4 заменён до релиза новым ACME-6."""
+        files = self.mutate(NFR, status="superseded", **changes)
+        files["epics/ACME-1-epic-core/requirements/ACME-6-nfr-speed2.md"] = dict(
+            id="ACME-6", type="nfr", status="draft", parent="ACME-1", children=[],
+            links=[{"type": "supersedes", "to": "ACME-4"}, {"type": "constrains", "to": "ACME-3"}])
+        files[EPIC]["children"] = ["ACME-2", "ACME-4", "ACME-6"]
+        return files
+
+    def test_superseded(self):
+        reg = dict(registries=((6, 7), (3, 4)))
+        code, out = self.lint(self.build(self.replaced_nfr(), **reg))
+        self.assertEqual((code, out.strip()), (0, "замечаний нет"))
+        self.assertFinds(self.mutate(NFR, status="superseded"), "superseded без входящего supersedes")
+        files = self.replaced_nfr()
+        files["epics/ACME-1-epic-core/requirements/ACME-6-nfr-speed2.md"].update(
+            status="canceled", cancel_reason="x", children=[])
+        self.assertFinds(files, "superseded без входящего supersedes", **reg)
+        self.assertFinds(self.replaced_nfr(releases=["1.0"]), "superseded с непустым releases", **reg)
+        files = self.replaced_nfr()
+        files[TC] = {**files[TC], "links": [{"type": "verifies", "to": "ACME-3"}, {"type": "verifies", "to": "ACME-4"}]}
+        self.assertFinds(files, "verifies → ACME-4, а требование superseded", **reg)
+        self.assertFinds(files, "warn: ", **reg)
+        files = valid_repo()
+        files["_canceled/ACME-4-nfr-speed.md"] = {**files.pop(NFR), "status": "superseded", "children": []}
+        files[EPIC]["children"] = ["ACME-2"]
+        self.assertFinds(files, "в _canceled/ только canceled, а здесь «superseded»")
+
+    def test_implemented_parent(self):
+        self.assertFinds(self.mutate(US, status="implemented"), "implemented, а must-ребёнок ACME-3 в статусе approved")
+        files = self.mutate(US, status="implemented")
+        files[SR] = {**files[SR], "priority": "should"}
+        _, out = self.lint(self.build(files))
+        self.assertNotIn("must-ребёнок", out)
+        files = self.mutate(EPIC, status="implemented")
+        self.assertFinds(files, "implemented, а must-ребёнок ACME-2 в статусе approved")
+        files[US] = {**files[US], "status": "superseded", "releases": []}
+        files[NFR] = {**files[NFR], "status": "obsolete"}
+        _, out = self.lint(self.build(files))
+        self.assertNotIn("must-ребёнок", out)
+
+    def implemented_sr(self, run_status="passed", **changes) -> dict:
+        files = self.mutate(SR, status="implemented", **changes)
+        files[TR] = {**files[TR], "outcome": run_status if run_status != "not-run" else "",
+                     "results": [{"case": "ACME-T-1", "status": run_status}]}
+        files[BUG] = {**files[BUG], "found_in": "", "found_on": ""}
+        return files
+
+    def test_implemented_spec(self):
+        code, out = self.lint(self.build(self.implemented_sr()))
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("error", out)
+        self.assertFinds(self.implemented_sr(links=[]), "implemented без связи implemented-in")
+        files = self.implemented_sr()
+        files[TC] = {**files[TC], "status": "draft"}
+        self.assertFinds(files, "implemented без approved/automated кейса с verifies")
+        files = self.implemented_sr()
+        files[TR] = {**files[TR], "status": "planned", "outcome": ""}
+        self.assertFinds(files, "у кейса ACME-T-1 нет completed-прогона")
+        self.assertFinds(self.implemented_sr("failed"), "кейс ACME-T-1 в последнем прогоне ACME-T-3: failed")
+        # последний прогон — с наибольшим номером: старый failed не мешает, новый failed ломает
+        files = self.implemented_sr()
+        files[TR] = {**files[TR], "outcome": "failed", "results": [{"case": "ACME-T-1", "status": "failed"}]}
+        files["runs/ACME-T-4-tr-again/ACME-T-4-tr-again.md"] = {
+            **files[TR], "id": "ACME-T-4", "outcome": "passed", "results": [{"case": "ACME-T-1", "status": "passed"}]}
+        _, out = self.lint(self.build(files, registries=((5, 6), (4, 5))))
+        self.assertNotIn("error", out)
+        files["runs/ACME-T-4-tr-again/ACME-T-4-tr-again.md"].update(
+            outcome="blocked", results=[{"case": "ACME-T-1", "status": "blocked"}])
+        self.assertFinds(files, "в последнем прогоне ACME-T-4: blocked", registries=((5, 6), (4, 5)))
+        _, out = self.lint(self.build(self.mutate(NFR, status="implemented")))
+        self.assertIn("implemented без связи implemented-in", out)
+
+    def test_implemented_spec_regress(self):
+        # failed/blocked с defect — регресс учтён, не ошибка
+        files = self.implemented_sr("failed")
+        files[TR]["results"] = [{"case": "ACME-T-1", "status": "failed", "defect": "ACME-5"}]
+        _, out = self.lint(self.build(files))
+        self.assertNotIn("error", out)
+        files[TR]["results"] = [{"case": "ACME-T-1", "status": "blocked", "defect": "ACME-5"}]
+        files[TR]["outcome"] = "blocked"
+        _, out = self.lint(self.build(files))
+        self.assertNotIn("error", out)
+        # skipped/not-run пропускаются: берём более ранний прогон
+        files = self.implemented_sr()
+        files["runs/ACME-T-4-tr-later/ACME-T-4-tr-later.md"] = {
+            **files[TR], "id": "ACME-T-4", "outcome": "passed", "results": [{"case": "ACME-T-1", "status": "skipped"}]}
+        _, out = self.lint(self.build(files, registries=((5, 6), (4, 5))))
+        self.assertNotIn("error", out)
+        # только skipped/пустые results — прогона нет
+        files = self.implemented_sr()
+        files[TR] = {**files[TR], "outcome": "", "results": [{"case": "ACME-T-1", "status": "not-run"}]}
+        self.assertFinds(files, "нет completed-прогона")
+        files[TR] = {**files[TR], "results": []}
+        self.assertFinds(files, "нет completed-прогона")
+
+    def test_acceptance_must_children(self):
+        files = self.mutate(US, status="acceptance")
+        self.assertFinds(files, "acceptance, а must-ребёнок ACME-3 в статусе approved")
+        files[SR] = {**files[SR], "priority": "should"}
+        _, out = self.lint(self.build(files))
+        self.assertNotIn("must-ребёнок", out)
+        files = self.mutate(EPIC, status="acceptance")
+        self.assertFinds(files, "acceptance, а must-ребёнок ACME-2 в статусе approved")
+        files[US] = {**files[US], "children": [], "priority": "must"}
+        files[US]["status"] = "canceled"
+        files[US]["cancel_reason"] = "x"
+        files[SR] = {**files[SR], "status": "draft"}
+        _, out = self.lint(self.build(files))
+        self.assertNotIn("must-ребёнок", out)
+
+    def test_nfr_decided_by(self):
+        for value in ("user", "system", ""):
+            _, out = self.lint(self.build(self.mutate(NFR, decided_by=value)))
+            self.assertNotIn("decided_by", out)
+        self.assertFinds(self.mutate(NFR, decided_by="team"), "decided_by «team»: user | system")
+        self.assertFinds(self.mutate(SR, decided_by="user"), "decided_by у system-requirement не используется")
+        _, out = self.lint(self.build(self.mutate(SR, decided_by="", owner="Иван")))
+        self.assertNotIn("error", out)
+
+    def test_child_ahead_of_parent(self):
+        files = self.mutate(US, status="review")
+        files[SR] = {**files[SR], "status": "in-progress"}
+        code, out = self.assertFinds(files, "warn: in-progress, а родитель ACME-2 в review")
+        self.assertEqual(code, 0)
+        files[US] = {**files[US], "status": "draft"}
+        self.assertFinds(files, "а родитель ACME-2 в draft")
+        files = self.mutate(US, status="acceptance")
+        files[SR] = {**files[SR], "status": "in-progress"}
+        files[US] = {**files[US], "status": "review"}
+        files[NFR] = {**files[NFR], "status": "in-progress", "parent": "ACME-1"}
+        files[EPIC] = {**files[EPIC], "status": "draft"}
+        self.assertFinds(files, "а родитель ACME-1 в draft")
+        # implemented при родителе в review допустимо
+        files = self.implemented_sr()
+        files[US] = {**files[US], "status": "review"}
+        _, out = self.lint(self.build(files))
+        self.assertNotIn("а родитель", out)
+        # родитель в работе — замечаний нет
+        files = self.mutate(SR, status="in-progress")
+        files[US] = {**files[US], "status": "in-progress"}
+        _, out = self.lint(self.build(files))
+        self.assertNotIn("а родитель", out)
+
+    def test_approved_parent_with_child_in_work(self):
+        for status in ("in-progress", "implemented"):
+            self.assertFinds(self.mutate(SR, status=status), "ребёнок в работе, родитель должен быть in-progress")
+        files = self.mutate(US, status="in-progress")
+        self.assertFinds(files, "ребёнок в работе, родитель должен быть in-progress")  # epic approved
+        files[EPIC] = {**files[EPIC], "status": "in-progress"}
+        _, out = self.lint(self.build(files))
+        self.assertNotIn("родитель должен быть", out)
+
+    def test_acceptance_pack(self):
+        self.assertFinds(self.mutate(US, status="acceptance"), "acceptance без пакета приёмки")
+        files = self.mutate(US, status="acceptance")
+        files[TS] = {**files[TS], "links": [{"type": "contains", "to": "ACME-T-1"}, {"type": "relates-to", "to": "ACME-2"}]}
+        _, out = self.lint(self.build(files))
+        self.assertNotIn("без пакета приёмки", out)
+        files[TR] = {**files[TR], "status": "planned", "outcome": ""}
+        self.assertFinds(files, "acceptance без пакета приёмки")
+        # эпик: сьюит из valid_repo уже ссылается на эпик
+        _, out = self.lint(self.build(self.mutate(EPIC, status="acceptance")))
+        self.assertNotIn("без пакета приёмки", out)
+        files = self.mutate(EPIC, status="acceptance")
+        files[TS] = {**files[TS], "links": [{"type": "contains", "to": "ACME-T-1"}]}
+        self.assertFinds(files, "acceptance без пакета приёмки")
+
+    def test_live_statuses_extend_approved(self):
+        for status in ("in-progress", "acceptance", "implemented"):
+            self.assertFinds(self.mutate(US, status=status, children=[]), f"{status} стори без единого SR")
+        files = self.mutate(NFR, status="in-progress")
+        files[SR] = {**files[SR], "status": "implemented", "links": [{"type": "conflicts-with", "to": "ACME-4"}]}
+        self.assertFinds(files, "оба approved или дальше (implemented, in-progress)")
+        files[NFR] = {**files[NFR], "status": "review"}
+        _, out = self.lint(self.build(files))
+        self.assertNotIn("оба approved", out)
+
     def test_runs_and_bugs(self):
         self.assertFinds(self.mutate(TR, outcome="passed"), "по results — failed")
         self.assertFinds(self.mutate(TR, revision=""), "revision пуст")

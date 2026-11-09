@@ -11,8 +11,18 @@ docs/requirements/README.md, docs/requirements/TRACEABILITY.md и docs/tests/REA
   - кейсы: `verifies` (сирота не даёт покрытия), verifies на obsolete-требование, заполненные
     «Шаги» и «Ожидаемый результат» с review; сьюит без obsolete-кейсов;
   - прогоны: состав `results`, `revision`, `outcome`, файлы `results/<кейс>.md`; поля бага `found_*`;
-  - инварианты: у approved стори есть SR, у obsolete есть входящий supersedes,
-    нет циклов в `depends-on`, пара conflicts-with не оба approved;
+  - инварианты: у стори в approved и дальше (in-progress, acceptance, implemented) есть SR,
+    у obsolete есть входящий supersedes, canceled лежит в `_canceled/` с `cancel_reason`,
+    живые артефакты на canceled не ссылаются, нет циклов в `depends-on`,
+    пара conflicts-with не оба в статусах approved и дальше;
+  - статусы требований: `acceptance` только у эпика и стори; superseded («заменено до релиза») —
+    входящий supersedes от не-canceled артефакта и пустой `releases`; implemented у стори и эпика —
+    все must-дети implemented (кроме canceled, superseded, obsolete), то же для acceptance;
+    implemented у SR и NFR — есть implemented-in, approved/automated-кейс с verifies и по каждому
+    такому кейсу последний completed-прогон с passed/failed/blocked: passed или failed/blocked с defect;
+    `decided_by` только у nfr (user | system, пустой = system); ребёнок in-progress/acceptance при родителе
+    draft/review — warn; approved стори или эпик с ребёнком в работе — warn; acceptance
+    без пакета приёмки (completed-прогон сьюита с relates-to на неё) — warn;
   - `external`: словарь «система → ID», один внешний ID — один артефакт;
   - реестры: `Next` больше любого выданного номера.
 Смысл (формулировки, противоречия, покрытие) проверяет агент `req-reviewer`.
@@ -38,9 +48,17 @@ except ImportError:
 ROOT = Path(__file__).resolve().parents[2]
 REQ_TYPES = {"epic": "epic", "us": "user-story", "sr": "system-requirement", "nfr": "nfr", "bug": "bug"}
 TEST_TYPES = {"tc": "test-case", "ts": "test-suite", "tr": "test-run"}
-REQ_STATUS = {"draft", "review", "approved", "implemented", "obsolete"}
+REQ_STATUS = {"draft", "review", "approved", "in-progress", "acceptance", "implemented",
+              "obsolete", "canceled", "superseded"}
+SPEC_STATUS = REQ_STATUS - {"acceptance"}  # у SR и NFR нет приёмки: её проходит стори
+LIVE = ("approved", "in-progress", "acceptance", "implemented")  # утверждено и действует
+IN_WORK = ("in-progress", "acceptance", "implemented")
+DECIDERS = ("user", "system")  # кто утверждает NFR; пусто = system
+GONE = ("canceled", "superseded", "obsolete")  # не ждём реализации
+CANCELED_DIR = "_canceled"  # отменённые требования: вне дерева, агенты не читают (README, .ignore)
 STATUSES = {
-    "epic": REQ_STATUS, "user-story": REQ_STATUS, "system-requirement": REQ_STATUS, "nfr": REQ_STATUS,
+    "epic": REQ_STATUS, "user-story": REQ_STATUS,
+    "system-requirement": SPEC_STATUS, "nfr": SPEC_STATUS,
     "bug": {"open", "in-progress", "fixed", "verified", "closed", "rejected"},
     "test-case": {"draft", "review", "approved", "automated", "obsolete"},
     "test-suite": {"draft", "review", "approved", "obsolete"},
@@ -179,6 +197,7 @@ def registry(path: Path) -> tuple[str | None, int | None, int | None]:
 def artifact_files() -> list[Path]:
     req, tests = ROOT / "docs" / "requirements", ROOT / "docs" / "tests"
     files = sorted((req / "epics").rglob("*.md")) + sorted((req / "bugs").glob("*.md"))
+    files += sorted((req / CANCELED_DIR).glob("*.md"))
     files += sorted((tests / "cases").glob("*.md")) + sorted((tests / "suites").glob("*.md"))
     files += sorted(p for p in (tests / "runs").glob("*/*.md"))
     return files
@@ -266,7 +285,27 @@ class Linter:
                 return True, parts[parent_index] if parent_index is not None else None
         return False, None
 
+    def check_canceled(self, a: Artifact) -> bool:
+        """Отменённое требование: лежит в `_canceled/`, есть причина. True — дерево не проверять."""
+        in_dir = a.space == "req" and a.path.parent.name == CANCELED_DIR
+        canceled = a.fm.get("status") == "canceled"
+        if canceled and not in_dir:
+            self.add(a.path, a.line("status:"), "error", f"canceled лежит не в docs/requirements/{CANCELED_DIR}/")
+        if in_dir and not canceled:
+            self.add(a.path, a.line("status:"), "error", f"в {CANCELED_DIR}/ только canceled, а здесь «{a.fm.get('status')}»")
+        if canceled and not str(a.fm.get("cancel_reason") or "").strip():
+            self.add(a.path, a.line("status:"), "error", "canceled без cancel_reason")
+        if canceled and a.fm.get("children"):
+            self.add(a.path, a.line("children:"), "error", "у canceled children должен быть пустым")
+        return in_dir or canceled
+
+    def is_canceled(self, target_id: str) -> bool:
+        t = self.by_id.get(target_id)
+        return bool(t and t.fm.get("status") == "canceled")
+
     def check_tree(self, a: Artifact) -> None:
+        if self.check_canceled(a):
+            return  # parent остаётся для истории; взаимность children не проверяем
         placed, parent_stem = self.folder_parent(a)
         if not placed:
             self.add(a.path, 1, "error", f"{a.type} лежит не на своём месте (см. структуру в README каталога)")
@@ -291,6 +330,9 @@ class Linter:
                     self.add(a.path, a.line("parent:"), "error", f"родитель {parent} не перечисляет {a.id} в children")
         for child in as_list(a.fm.get("children")):
             c = self.by_id.get(str(child))
+            if self.is_canceled(str(child)):
+                self.add(a.path, a.line(str(child)), "error", f"в children {child}, а он canceled: убрать")
+                continue
             if c is None:
                 self.add(a.path, a.line(str(child)), "error", f"в children {child}: такого артефакта нет")
             elif c.fm.get("parent") != a.id:
@@ -346,19 +388,23 @@ class Linter:
             if t is a:
                 self.add(a.path, line, "error", f"{kind} на самого себя")
                 continue
+            if t.fm.get("status") == "canceled" and a.fm.get("status") != "canceled":
+                self.add(a.path, line, "error", f"{kind} → {to}, а он canceled: живые артефакты на отменённые не ссылаются")
+                continue
             if targets and t.type not in targets:
                 self.add(a.path, line, "error", f"{kind} → {to} ({t.type}), допустимо: {', '.join(sorted(targets))}")
             if kind in ("depends-on", "supersedes") and t.type != a.type:
                 self.add(a.path, line, "error", f"{kind} связывает артефакты одного типа, а здесь {a.type} → {t.type}")
-            if kind == "supersedes" and t.fm.get("status") != "obsolete":
-                self.add(a.path, line, "warn", f"{to} заменён, но его статус не obsolete")
+            if kind == "supersedes" and t.fm.get("status") not in ("obsolete", "superseded"):
+                self.add(a.path, line, "warn", f"{to} заменён, но его статус не obsolete и не superseded")
             if kind in ("relates-to", "conflicts-with"):
                 if a.space == "req" and t.space == "test":
                     self.add(a.path, line, "error", f"{kind} между требованием и тестом пишется на стороне теста")
                 elif a.space == t.space and a.num > t.num:
                     self.add(a.path, line, "warn", f"{kind} пишется у меньшего ID ({to}), обратную сторону не дублируют")
-            if kind == "conflicts-with" and a.fm.get("status") == "approved" and t.fm.get("status") == "approved":
-                self.add(a.path, line, "error", f"conflicts-with: {a.id} и {to} оба approved")
+            if kind == "conflicts-with" and a.fm.get("status") in LIVE and t.fm.get("status") in LIVE:
+                self.add(a.path, line, "error", f"conflicts-with: {a.id} и {to} оба approved или дальше "
+                                                f"({a.fm.get('status')}, {t.fm.get('status')})")
 
     def check_bug(self, a: Artifact) -> None:
         if a.fm.get("severity") not in SEVERITY:
@@ -394,8 +440,8 @@ class Linter:
                      "нет verifies: кейс-сирота, в покрытие не идёт")
         for to in verifies:
             t = self.by_id.get(to)
-            if t and t.fm.get("status") == "obsolete" and status != "obsolete":
-                self.add(a.path, a.line(f"to: {to}"), "warn", f"verifies → {to}, а требование obsolete")
+            if t and t.fm.get("status") in ("obsolete", "superseded") and status != "obsolete":
+                self.add(a.path, a.line(f"to: {to}"), "warn", f"verifies → {to}, а требование {t.fm.get('status')}")
         if status in ("review",) + COVERING:
             for title in CASE_SECTIONS:
                 filled = self.section_filled(a, title)
@@ -461,10 +507,11 @@ class Linter:
         superseded = {str(l.get("to")) for a in self.arts for l in as_list(a.fm.get("links"))
                       if isinstance(l, dict) and l.get("type") == "supersedes"}
         for a in self.arts:
-            if a.type == "user-story" and a.fm.get("status") == "approved":
+            if a.type == "user-story" and a.fm.get("status") in LIVE:
                 if not any(self.by_id.get(str(c)) and self.by_id[str(c)].type == "system-requirement"
                            for c in as_list(a.fm.get("children"))):
-                    self.add(a.path, a.line("status:"), "error", "approved стори без единого SR в children")
+                    self.add(a.path, a.line("status:"), "error",
+                             f"{a.fm.get('status')} стори без единого SR в children")
             if a.fm.get("status") == "obsolete" and a.id not in superseded:
                 self.add(a.path, a.line("status:"), "error", "obsolete без входящего supersedes")
         graph = {a.id: [str(l.get("to")) for l in as_list(a.fm.get("links"))
@@ -485,6 +532,87 @@ class Linter:
         for node in graph:
             if not state.get(node):
                 visit(node, [node])
+
+    @staticmethod
+    def links_of(a: Artifact, kind: str) -> list[str]:
+        return [str(l.get("to")) for l in as_list(a.fm.get("links")) if isinstance(l, dict) and l.get("type") == kind]
+
+    def has_acceptance_pack(self, a: Artifact) -> bool:
+        """Есть completed-прогон сьюита, у которого relates-to на a."""
+        for run in self.arts:
+            if run.type != "test-run" or run.fm.get("status") != "completed":
+                continue
+            for sid in self.links_of(run, "executes"):
+                suite = self.by_id.get(sid)
+                if suite and suite.type == "test-suite" and a.id in self.links_of(suite, "relates-to"):
+                    return True
+        return False
+
+    def check_implemented_spec(self, a: Artifact) -> None:
+        line = a.line("status:")
+        if not self.links_of(a, "implemented-in"):
+            self.add(a.path, line, "error", "implemented без связи implemented-in")
+        cases = [c for c in self.arts if c.type == "test-case" and c.fm.get("status") in COVERING
+                 and a.id in self.links_of(c, "verifies")]
+        if not cases:
+            self.add(a.path, line, "error", "implemented без approved/automated кейса с verifies")
+        for case in cases:
+            last = None  # (прогон, строка результата): последний completed со статусом passed/failed/blocked
+            for r in sorted((r for r in self.arts if r.type == "test-run" and r.fm.get("status") == "completed"),
+                            key=lambda r: -r.num):
+                row = next((x for x in as_list(r.fm.get("results"))
+                            if isinstance(x, dict) and str(x.get("case")) == case.id
+                            and x.get("status") in ("passed", "failed", "blocked")), None)
+                if row:
+                    last = (r, row)
+                    break
+            if last is None:
+                self.add(a.path, line, "error", f"implemented, а у кейса {case.id} нет completed-прогона с passed/failed/blocked")
+            elif last[1].get("status") != "passed" and not last[1].get("defect"):
+                self.add(a.path, line, "error",
+                         f"implemented, а кейс {case.id} в последнем прогоне {last[0].id}: "
+                         f"{last[1].get('status')} без defect")
+
+    def check_status_model(self) -> None:
+        """Согласованность статусов требований между собой и с тестами."""
+        replaced_by: dict[str, list[Artifact]] = {}
+        for a in self.arts:
+            if a.fm.get("status") != "canceled":
+                for to in self.links_of(a, "supersedes"):
+                    replaced_by.setdefault(to, []).append(a)
+        for a in self.arts:
+            if a.space != "req" or a.type == "bug":
+                continue
+            status, line = a.fm.get("status"), a.line("status:")
+            if status == "superseded":
+                if not replaced_by.get(a.id):
+                    self.add(a.path, line, "error", "superseded без входящего supersedes от не-canceled артефакта")
+                if as_list(a.fm.get("releases")):
+                    self.add(a.path, a.line("releases:"), "error", "superseded с непустым releases")
+            decided = a.fm.get("decided_by")
+            if decided not in (None, ""):
+                if a.type != "nfr":
+                    self.add(a.path, a.line("decided_by:"), "error", f"decided_by у {a.type} не используется (только у nfr)")
+                elif decided not in DECIDERS:
+                    self.add(a.path, a.line("decided_by:"), "error", f"decided_by «{decided}»: {' | '.join(DECIDERS)}")
+            kids = [self.by_id[str(c)] for c in as_list(a.fm.get("children")) if str(c) in self.by_id]
+            if a.type in ("epic", "user-story"):
+                if status in ("implemented", "acceptance"):
+                    for c in kids:
+                        if (c.fm.get("priority") == "must" and c.fm.get("status") not in GONE
+                                and c.fm.get("status") != "implemented"):
+                            self.add(a.path, line, "error",
+                                     f"{status}, а must-ребёнок {c.id} в статусе {c.fm.get('status')}")
+                if status == "approved" and any(c.fm.get("status") in IN_WORK for c in kids):
+                    self.add(a.path, line, "warn", "ребёнок в работе, родитель должен быть in-progress")
+                if status == "acceptance" and not self.has_acceptance_pack(a):
+                    self.add(a.path, line, "warn", "acceptance без пакета приёмки (completed-прогон сьюита с relates-to)")
+            if a.type in SPEC and status == "implemented":
+                self.check_implemented_spec(a)
+            parent = self.by_id.get(str(a.fm.get("parent") or ""))
+            if (parent and status in ("in-progress", "acceptance")
+                    and parent.fm.get("status") in ("draft", "review")):
+                self.add(a.path, line, "warn", f"{status}, а родитель {parent.id} в {parent.fm.get('status')}")
 
     def check_registries(self) -> None:
         for path, space in ((self.req_registry, "req"), (self.test_registry, "test")):
@@ -520,6 +648,7 @@ class Linter:
             if a.type == "system-requirement" and a.fm.get("level") not in SR_LEVELS:
                 self.add(a.path, a.line("level:"), "error", f"level «{a.fm.get('level') or ''}»: {' | '.join(SR_LEVELS)}")
         self.check_invariants()
+        self.check_status_model()
         self.check_registries()
         return sorted(self.issues, key=lambda i: (rel(i.path), i.line))
 
